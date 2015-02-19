@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">BTConnector</string>
+    <string name="hello_world">Hello world!</string>
+    <string name="action_settings">Settings</string>
+    <string name="paired_devices">Paired devices</string>
+    <string name="near_devices">Near devices</string>
+</resources>
