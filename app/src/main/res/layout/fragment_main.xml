@@ -1,40 +1,43 @@
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent">
 
-    <LinearLayout
+
+    <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical">
 
         <TextView
-            android:id="@+id/textView1"
+            android:id="@+id/paired_devices_title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
             android:layout_marginLeft="8dp"
             android:text="@string/paired_devices"
+            android:visibility="gone"
             />
 
         <ListView
             android:id="@+id/paired_devices_list"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content">
+            android:layout_height="wrap_content"
+            android:stackFromBottom="true">
         </ListView>
 
         <TextView
-            android:id="@+id/textView2"
+            android:id="@+id/near_devices_title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
             android:layout_marginLeft="8dp"
-            android:text="@string/near_devices"/>
+            android:text="@string/near_devices"
+            android:visibility="gone"/>
 
         <ListView
             android:id="@+id/near_devices_list"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content">
+            android:layout_height="wrap_content"
+            android:stackFromBottom="true">
         </ListView>
 
+
+
     </LinearLayout>
-</ScrollView>

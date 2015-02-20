@@ -6,4 +6,9 @@
           android:title="@string/action_settings"
           android:orderInCategory="100"
           app:showAsAction="never"/>
+
+    <item android:id="@+id/menu_find_devices"
+          android:title="@string/find_devices"
+          app:showAsAction="ifRoom"
+        />
 </menu>
