@@ -1,5 +1,6 @@
 package com.kolomiets.android.btconnector.ui;
 
+import android.app.ActionBar;
 import android.app.Activity;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
@@ -7,6 +8,9 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.os.Handler;
+import android.os.Message;
+import android.provider.SyncStateContract;
 import android.support.annotation.Nullable;
 import android.support.v4.app.FragmentActivity;
 import android.support.v7.app.ActionBarActivity;
@@ -20,8 +24,12 @@ import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
+import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
+import android.widget.Button;
+import android.widget.EditText;
 import android.widget.ListView;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import com.kolomiets.android.btconnector.R;
@@ -49,18 +57,35 @@ public class MainActivity extends ActionBarActivity {
     /**
      * A placeholder fragment containing a simple view.
      */
-    public static class PlaceholderFragment extends Fragment {
+    public static class PlaceholderFragment extends Fragment{ // implements BluetoothMessagesHandler.BluetoothCallback {
+
+        // Message types sent from the BluetoothChatService Handler
+        public static final int MESSAGE_STATE_CHANGE = 1;
+        public static final int MESSAGE_READ = 2;
+        public static final int MESSAGE_WRITE = 3;
+        public static final int MESSAGE_DEVICE_NAME = 4;
+        public static final int MESSAGE_TOAST = 5;
+
+        // Key names received from the BluetoothChatService Handler
+        public static final String DEVICE_NAME = "device_name";
+        public static final String TOAST = "toast";
+
 
         public static final String TAG = PlaceholderFragment.class.getSimpleName();
         public static String EXTRA_DEVICE_ADDRESS = "device_address";
-        private static final int REQUEST_ENABLE_BT = 1;
+        private static final int REQUEST_ENABLE_BT = 11;
 
+        private String message;
+        private EditText mMessageEditText;
+        private Button mSendButton;
 
         private ListView mPairedDevicesListView;
         private ListView mNearDevicesListView;
 
 
-        private BluetoothAdapter mBtAdapter;
+        private BluetoothAdapter mBtAdapter = null;
+
+        private String mConnectedDeviceName = null;
         private BtConnectionService mBtConnectionService;
 
         private ArrayAdapter<String> mNearDevicesAdapter;
@@ -83,6 +108,9 @@ public class MainActivity extends ActionBarActivity {
 
             mBtAdapter = BluetoothAdapter.getDefaultAdapter();
 
+            mBtConnectionService =
+                    new BtConnectionService(getActivity().getApplicationContext(), mHandler);
+
             if(mBtAdapter == null) {
                 FragmentActivity activity = getActivity();
                 Toast.makeText(activity, "Bluetooth is not available", Toast.LENGTH_LONG).show();
@@ -94,6 +122,20 @@ public class MainActivity extends ActionBarActivity {
                 Intent intent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
                 startActivityForResult(intent, REQUEST_ENABLE_BT);
             }
+            ensureDiscoverable();
+
+        }
+
+        @Override
+        public void onStart() {
+            super.onStart();
+            // Register for broadcasts when a device is discovered
+            IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
+            getActivity().registerReceiver(mReceiver, filter);
+
+            // Register for broadcasts when discovery has finished
+            filter = new IntentFilter(BluetoothAdapter.ACTION_DISCOVERY_FINISHED);
+            getActivity().registerReceiver(mReceiver, filter);
         }
 
         private void ensureDiscoverable() {
@@ -141,18 +183,33 @@ public class MainActivity extends ActionBarActivity {
 
             mPairedDevicesListView = (ListView)view.findViewById(R.id.paired_devices_list);
             mPairedDevicesListView.setAdapter(mPairedDevicesAdapter);
+            mPairedDevicesListView.setOnItemClickListener(mDeviceClickListener);
+
             mNearDevicesListView = (ListView)view.findViewById(R.id.near_devices_list);
             mNearDevicesListView.setAdapter(mNearDevicesAdapter);
+            mNearDevicesListView.setOnItemClickListener(mDeviceClickListener);
 
-            // Register for broadcasts when a device is discovered
-            IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
-            getActivity().registerReceiver(mReceiver, filter);
+//            // Register for broadcasts when a device is discovered
+//            IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
+//            getActivity().registerReceiver(mReceiver, filter);
+//
+//            // Register for broadcasts when discovery has finished
+//            filter = new IntentFilter(BluetoothAdapter.ACTION_DISCOVERY_FINISHED);
+//            getActivity().registerReceiver(mReceiver, filter);
 
-            // Register for broadcasts when discovery has finished
-            filter = new IntentFilter(BluetoothAdapter.ACTION_DISCOVERY_FINISHED);
-            getActivity().registerReceiver(mReceiver, filter);
+            mMessageEditText = (EditText) view.findViewById(R.id.message_edit_text);
+            mSendButton = (Button)view.findViewById(R.id.send_button);
+            mSendButton.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    message = mMessageEditText.getText().toString();
+                    sendMessage(message);
+                }
+            });
 
             Set<BluetoothDevice> mPairedDevices = mBtAdapter.getBondedDevices();
+
+//            ensureDiscoverable();
 
             if(mPairedDevices.size() > 0) {
                 view.findViewById(R.id.paired_devices_title).setVisibility(View.VISIBLE);
@@ -162,6 +219,20 @@ public class MainActivity extends ActionBarActivity {
             } else {
                 mPairedDevicesAdapter.add("No paired devices");
             }
+        }
+
+        private void sendMessage(String message) {
+
+            if(mBtConnectionService.getState() != BtConnectionService.STATE_CONNECTED) {
+                Toast.makeText(getActivity(), "You are not connected to the device", Toast.LENGTH_SHORT).show();
+            }
+
+            if (message.length() > 0) {
+                // Get the message bytes and tell the BluetoothChatService to write
+                byte[] send = message.getBytes();
+                mBtConnectionService.write(send);
+            }
+
         }
 
         @Override
@@ -201,14 +272,69 @@ public class MainActivity extends ActionBarActivity {
             }
         }
 
+//        @Override
+//        public void onDestroy() {
+//            super.onDestroy();
+//            if(mBtAdapter != null) {
+//                mBtAdapter.cancelDiscovery();
+//            }
+//
+//            getActivity().unregisterReceiver(mReceiver);
+//        }
+
         @Override
-        public void onDestroy() {
-            super.onDestroy();
-            if(mBtAdapter != null) {
+        public void onDestroyView() {
+            super.onDestroyView();
+            if (mBtAdapter != null) {
                 mBtAdapter.cancelDiscovery();
             }
+        }
 
-            getActivity().unregisterReceiver(mReceiver);
+        @Override
+        public void onActivityResult(int requestCode, int resultCode, Intent data) {
+            super.onActivityResult(requestCode, resultCode, data);
+            switch (requestCode) {
+                case REQUEST_ENABLE_BT:
+                    if (resultCode == RESULT_OK || mBtAdapter.isEnabled()) {
+                        // TODO : user enabled BT, do what you need
+                        Log.d(TAG, "enabled BT");
+                    } else {
+                        // user not confirmed enabling BT, tell him to go fuck himself
+                        Log.d(TAG, "user did not enabled BT");
+                        Toast.makeText(getActivity(), "user did not enabled BT", Toast.LENGTH_LONG).show();
+                        getActivity().finish();
+                    }
+                    return;
+            }
+        }
+
+        @Override
+        public void onResume() {
+            super.onResume();
+
+            //doDiscovery();
+        }
+
+        private AdapterView.OnItemClickListener mDeviceClickListener
+                = new AdapterView.OnItemClickListener() {
+            public void onItemClick(AdapterView<?> av, View v, int arg2, long arg3) {
+                // Cancel discovery because it's costly and we're about to connect
+                mBtAdapter.cancelDiscovery();
+
+                // Get the device MAC address, which is the last 17 chars in the View
+                String info = ((TextView) v).getText().toString();
+                String address = info.substring(info.length() - 17);
+
+                connectDevice(address);
+
+            }
+        };
+
+        private void connectDevice(String address) {
+            // Get the BluetoothDevice object
+            BluetoothDevice device = mBtAdapter.getRemoteDevice(address);
+            // Attempt to connect to the device
+            mBtConnectionService.connect(device);
         }
 
         private final BroadcastReceiver mReceiver = new BroadcastReceiver() {
@@ -221,7 +347,9 @@ public class MainActivity extends ActionBarActivity {
                     // Get the BluetoothDevice object from the Intent
                     BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
                     // If it's already paired, skip it, because it's been listed already
-                    if (device.getBondState() != BluetoothDevice.BOND_BONDED) {
+                    // If it's already discovered, skip it, because it's existed in adapter
+                    if ((device.getBondState() != BluetoothDevice.BOND_BONDED)&&
+                            (mNearDevicesAdapter.getPosition(device.getName() + "\n" + device.getAddress()) == -1)) {
                         mNearDevicesAdapter.add(device.getName() + "\n" + device.getAddress());
                     }
                     // When discovery is finished, change the Activity title
@@ -242,6 +370,90 @@ public class MainActivity extends ActionBarActivity {
                         String noDevices = getResources().getText(R.string.none_found).toString();
                         mNearDevicesAdapter.add(noDevices);
                     }
+                }
+            }
+        };
+
+        /**
+         * Updates the status on the action bar.
+         *
+         * @param resId a string resource ID
+         */
+        private void setStatus(int resId) {
+            FragmentActivity activity = getActivity();
+            if (null == activity) {
+                return;
+            }
+            final ActionBar actionBar = activity.getActionBar();
+            if (null == actionBar) {
+                return;
+            }
+            actionBar.setSubtitle(resId);
+        }
+
+        /**
+         * Updates the status on the action bar.
+         *
+         * @param subTitle status
+         */
+        private void setStatus(CharSequence subTitle) {
+            FragmentActivity activity = getActivity();
+            if (null == activity) {
+                return;
+            }
+            final ActionBar actionBar = activity.getActionBar();
+            if (null == actionBar) {
+                return;
+            }
+            actionBar.setSubtitle(subTitle);
+        }
+
+        private final Handler mHandler = new Handler() {
+            @Override
+            public void handleMessage(Message msg) {
+                FragmentActivity activity = getActivity();
+                switch (msg.what) {
+                    case MESSAGE_STATE_CHANGE:
+                        switch (msg.arg1) {
+                            case BtConnectionService.STATE_CONNECTED:
+                                setStatus(getString(R.string.title_connected_to, mConnectedDeviceName));
+
+                                break;
+                            case BtConnectionService.STATE_CONNECTING:
+                                setStatus(R.string.title_connecting);
+                                break;
+                            case BtConnectionService.STATE_LISTEN:
+                            case BtConnectionService.STATE_NONE:
+                                setStatus(R.string.title_not_connected);
+                                break;
+                        }
+                        break;
+                    case MESSAGE_WRITE:
+                        byte[] writeBuf = (byte[]) msg.obj;
+                        // construct a string from the buffer
+                        String writeMessage = new String(writeBuf);
+//                        mConversationArrayAdapter.add("Me:  " + writeMessage);
+                        break;
+                    case MESSAGE_READ:
+                        byte[] readBuf = (byte[]) msg.obj;
+                        // construct a string from the valid bytes in the buffer
+                        String readMessage = new String(readBuf, 0, msg.arg1);
+                        Toast.makeText(getActivity(), "message:" +readMessage, Toast.LENGTH_LONG).show();
+                        break;
+                    case MESSAGE_DEVICE_NAME:
+                        // save the connected device's name
+                        mConnectedDeviceName = msg.getData().getString(DEVICE_NAME);
+                        if (null != activity) {
+                            Toast.makeText(activity, "Connected to "
+                                    + mConnectedDeviceName, Toast.LENGTH_SHORT).show();
+                        }
+                        break;
+                    case MESSAGE_TOAST:
+                        if (null != activity) {
+                            Toast.makeText(activity, msg.getData().getString(TOAST),
+                                    Toast.LENGTH_SHORT).show();
+                        }
+                        break;
                 }
             }
         };

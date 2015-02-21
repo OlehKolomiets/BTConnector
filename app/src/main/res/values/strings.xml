@@ -9,4 +9,7 @@
     <string name="find_devices">Find</string>
     <string name="send_massage">Send</string>
     <string name="searching_for_device">Serching...</string>
+    <string name="title_connected_to">Conected to</string>
+    <string name="title_connecting">Connecting...</string>
+    <string name="title_not_connected">not connected</string>
 </resources>

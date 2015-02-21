@@ -116,10 +116,28 @@ public class BtConnectionService {
         t.write(out);
     }
 
-    private void start() {
+    private synchronized void start() {
         Log.d(TAG, "start");
-        mAcceptThread.start();
+
+        if (mConnectThread != null) {
+            mConnectThread.cancel();
+            mConnectThread = null;
+        }
+
+        // Cancel any thread currently running a connection
+        if (mConnectedThread != null) {
+            mConnectedThread.cancel();
+            mConnectedThread = null;
+        }
+
         setState(STATE_LISTEN);
+
+        // Start the thread to listen on a BluetoothServerSocket
+        if (mAcceptThread == null) {
+            mAcceptThread = new AcceptThread();
+            mAcceptThread.start();
+        }
+
     }
 
     public synchronized void connect(BluetoothDevice device) {
