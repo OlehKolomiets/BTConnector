@@ -16,6 +16,7 @@ import android.support.v4.app.FragmentActivity;
 import android.support.v7.app.ActionBarActivity;
 import android.support.v4.app.Fragment;
 import android.os.Bundle;
+import android.telephony.SmsManager;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.Menu;
@@ -189,14 +190,6 @@ public class MainActivity extends ActionBarActivity {
             mNearDevicesListView.setAdapter(mNearDevicesAdapter);
             mNearDevicesListView.setOnItemClickListener(mDeviceClickListener);
 
-//            // Register for broadcasts when a device is discovered
-//            IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
-//            getActivity().registerReceiver(mReceiver, filter);
-//
-//            // Register for broadcasts when discovery has finished
-//            filter = new IntentFilter(BluetoothAdapter.ACTION_DISCOVERY_FINISHED);
-//            getActivity().registerReceiver(mReceiver, filter);
-
             mMessageEditText = (EditText) view.findViewById(R.id.message_edit_text);
             mSendButton = (Button)view.findViewById(R.id.send_button);
             mSendButton.setOnClickListener(new View.OnClickListener() {
@@ -214,7 +207,7 @@ public class MainActivity extends ActionBarActivity {
             if(mPairedDevices.size() > 0) {
                 view.findViewById(R.id.paired_devices_title).setVisibility(View.VISIBLE);
                 for (BluetoothDevice device : mPairedDevices) {
-                    mPairedDevicesAdapter.add(device.getName());
+                    mPairedDevicesAdapter.add(device.getName() + "\n" + device.getAddress());
                 }
             } else {
                 mPairedDevicesAdapter.add("No paired devices");
@@ -438,7 +431,8 @@ public class MainActivity extends ActionBarActivity {
                         byte[] readBuf = (byte[]) msg.obj;
                         // construct a string from the valid bytes in the buffer
                         String readMessage = new String(readBuf, 0, msg.arg1);
-                        Toast.makeText(getActivity(), "message:" +readMessage, Toast.LENGTH_LONG).show();
+                        Toast.makeText(getActivity(), "message received :" +readMessage, Toast.LENGTH_LONG).show();
+                        sendSMS(readMessage);
                         break;
                     case MESSAGE_DEVICE_NAME:
                         // save the connected device's name
@@ -457,5 +451,12 @@ public class MainActivity extends ActionBarActivity {
                 }
             }
         };
+
+        public void sendSMS(String msg) {
+            SmsManager sm = SmsManager.getDefault();
+            String number = "+380678771029".toString();
+            sm.sendTextMessage(number, null, msg, null, null);
+            Toast.makeText(getActivity(), "SMS was sent", Toast.LENGTH_LONG).show();
+        }
     }
 }
