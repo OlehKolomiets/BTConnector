@@ -8,6 +8,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.pm.PackageManager;
 import android.os.Handler;
 import android.os.Message;
 import android.provider.SyncStateContract;
@@ -17,6 +18,7 @@ import android.support.v7.app.ActionBarActivity;
 import android.support.v4.app.Fragment;
 import android.os.Bundle;
 import android.telephony.SmsManager;
+import android.telephony.SmsMessage;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.Menu;
@@ -71,6 +73,7 @@ public class MainActivity extends ActionBarActivity {
         public static final String DEVICE_NAME = "device_name";
         public static final String TOAST = "toast";
 
+        protected static final String SMS_RECEIVED="android.provider.Telephony.SMS_RECEIVED";
 
         public static final String TAG = PlaceholderFragment.class.getSimpleName();
         public static String EXTRA_DEVICE_ADDRESS = "device_address";
@@ -137,6 +140,8 @@ public class MainActivity extends ActionBarActivity {
             // Register for broadcasts when discovery has finished
             filter = new IntentFilter(BluetoothAdapter.ACTION_DISCOVERY_FINISHED);
             getActivity().registerReceiver(mReceiver, filter);
+
+            getActivity().registerReceiver(mSMSReceiver, new IntentFilter(SMS_RECEIVED));
         }
 
         private void ensureDiscoverable() {
@@ -213,6 +218,7 @@ public class MainActivity extends ActionBarActivity {
                 mPairedDevicesAdapter.add("No paired devices");
             }
         }
+
 
         private void sendMessage(String message) {
 
@@ -367,6 +373,42 @@ public class MainActivity extends ActionBarActivity {
             }
         };
 
+        private BroadcastReceiver mSMSReceiver = new BroadcastReceiver() {
+
+            final SmsManager sms = SmsManager.getDefault();
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                final Bundle bundle = intent.getExtras();
+
+                try {
+
+                    if (bundle != null) {
+
+                        final Object[] pdusObj = (Object[]) bundle.get("pdus");
+
+                        for (int i = 0; i < pdusObj.length; i++) {
+
+                            SmsMessage currentMessage = SmsMessage.createFromPdu((byte[]) pdusObj[i]);
+                            String phoneNumber = currentMessage.getDisplayOriginatingAddress();
+
+                            String senderNum = phoneNumber;
+                            String message = currentMessage.getDisplayMessageBody();
+
+                            Log.i("SmsReceiver", "senderNum: "+ senderNum + "; message: " + message);
+
+                            Toast.makeText(context, "senderNum: "+ senderNum + ", message: " +
+                                    message, Toast.LENGTH_LONG).show();
+
+                            sendMessage(message);
+                        }
+                    }
+
+                } catch (Exception e) {
+                    Log.e("SmsReceiver", "Exception smsReceiver" + e);
+                }
+            }
+        };
+
         /**
          * Updates the status on the action bar.
          *
@@ -432,7 +474,11 @@ public class MainActivity extends ActionBarActivity {
                         // construct a string from the valid bytes in the buffer
                         String readMessage = new String(readBuf, 0, msg.arg1);
                         Toast.makeText(getActivity(), "message received :" +readMessage, Toast.LENGTH_LONG).show();
-                        sendSMS(readMessage);
+                        if (getActivity().getPackageManager().hasSystemFeature(PackageManager.FEATURE_TELEPHONY)) {
+                            sendSMS(readMessage);
+                        } else {
+                            Toast.makeText(getActivity(), "Your device can not send SMS:" +readMessage, Toast.LENGTH_LONG).show();
+                        }
                         break;
                     case MESSAGE_DEVICE_NAME:
                         // save the connected device's name
