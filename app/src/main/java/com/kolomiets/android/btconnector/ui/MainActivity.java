@@ -144,11 +144,13 @@ public class MainActivity extends ActionBarActivity {
             getActivity().registerReceiver(mSMSReceiver, new IntentFilter(SMS_RECEIVED));
         }
 
+
+
         private void ensureDiscoverable() {
             if (mBtAdapter.getScanMode() !=
                     BluetoothAdapter.SCAN_MODE_CONNECTABLE_DISCOVERABLE) {
                 Intent discoverableIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE);
-                discoverableIntent.putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300);
+                discoverableIntent.putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 3600);
                 startActivity(discoverableIntent);
             }
         }
@@ -268,18 +270,19 @@ public class MainActivity extends ActionBarActivity {
             super.onStop();
             if (mReceiver != null) {
                 getActivity().unregisterReceiver(mReceiver);
+                getActivity().unregisterReceiver(mSMSReceiver);
             }
         }
 
-//        @Override
-//        public void onDestroy() {
-//            super.onDestroy();
-//            if(mBtAdapter != null) {
-//                mBtAdapter.cancelDiscovery();
-//            }
-//
-//            getActivity().unregisterReceiver(mReceiver);
-//        }
+        @Override
+        public void onDestroy() {
+            super.onDestroy();
+            if(mBtAdapter != null) {
+                mBtAdapter.cancelDiscovery();
+            }
+
+//            getActqivity().unregisterReceiver(mReceiver);
+        }
 
         @Override
         public void onDestroyView() {
@@ -287,6 +290,11 @@ public class MainActivity extends ActionBarActivity {
             if (mBtAdapter != null) {
                 mBtAdapter.cancelDiscovery();
             }
+            if(mBtConnectionService != null) {
+                mBtConnectionService.stop();
+            }
+//            getActivity().unregisterReceiver(mReceiver);
+//            getActivity().unregisterReceiver(mSMSReceiver);
         }
 
         @Override
@@ -305,13 +313,6 @@ public class MainActivity extends ActionBarActivity {
                     }
                     return;
             }
-        }
-
-        @Override
-        public void onResume() {
-            super.onResume();
-
-            //doDiscovery();
         }
 
         private AdapterView.OnItemClickListener mDeviceClickListener
@@ -475,7 +476,7 @@ public class MainActivity extends ActionBarActivity {
                         String readMessage = new String(readBuf, 0, msg.arg1);
                         Toast.makeText(getActivity(), "message received :" +readMessage, Toast.LENGTH_LONG).show();
                         if (getActivity().getPackageManager().hasSystemFeature(PackageManager.FEATURE_TELEPHONY)) {
-                            sendSMS(readMessage);
+//                            sendSMS(readMessage);
                         } else {
                             Toast.makeText(getActivity(), "Your device can not send SMS:" +readMessage, Toast.LENGTH_LONG).show();
                         }
