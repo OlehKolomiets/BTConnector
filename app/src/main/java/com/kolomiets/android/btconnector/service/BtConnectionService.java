@@ -15,6 +15,8 @@ import com.kolomiets.android.btconnector.common.logger.Log;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.UUID;
 
 /**
@@ -69,7 +71,7 @@ public class BtConnectionService {
         return mState;
     }
 
-    private synchronized void start() {
+    public synchronized void start() {
         Log.d(TAG, "start");
 
         if (mConnectThread != null) {
@@ -215,7 +217,7 @@ public class BtConnectionService {
             } catch (IOException e) {
                 e.printStackTrace();
             }
-            mServerSocket =tmp;
+            mServerSocket = tmp;
         }
 
         public void run() {
@@ -272,13 +274,42 @@ public class BtConnectionService {
         private final BluetoothDevice mDevice;
 
         public ConnectThread(BluetoothDevice device) {
-            mDevice =device;
+            mDevice = device;
             BluetoothSocket tmp = null;
 
+//            try {
+//                tmp = mDevice.createRfcommSocketToServiceRecord(MY_UUID);
+//                Method m = null;
+//                try {
+//                    m = mDevice.getClass().getMethod("createRfcommSocket", new Class[] {int.class});
+//                } catch (NoSuchMethodException e) {
+//                    e.printStackTrace();
+//                }
+//                try {
+//                    tmp = (BluetoothSocket) m.invoke(mDevice, 3);
+//                } catch (IllegalAccessException e) {
+//                    e.printStackTrace();
+//                } catch (InvocationTargetException e) {
+//                    e.printStackTrace();
+//                }
+//            } catch (IOException e) {
+//                Log.e(TAG, "create() failed", e);
+//            }
+            Method m = null;
             try {
-                tmp = mDevice.createInsecureRfcommSocketToServiceRecord(MY_UUID);
-            } catch (IOException e) {
-                Log.e(TAG, "create() failed", e);
+                m = device.getClass().getMethod("createInsecureRfcommSocketToServiceRecord", new Class[] { UUID.class });
+            } catch (NoSuchMethodException e) {
+                // TODO Auto-generated catch block
+                e.printStackTrace();
+            }
+            try {
+                tmp = (BluetoothSocket) m.invoke(device, (UUID) MY_UUID);
+            } catch (IllegalAccessException e) {
+                // TODO Auto-generated catch block
+                e.printStackTrace();
+            } catch (InvocationTargetException e) {
+                // TODO Auto-generated catch block
+                e.printStackTrace();
             }
             mSocket = tmp;
         }
@@ -290,7 +321,7 @@ public class BtConnectionService {
             try {
 
 //                BluetoothSocket socket = device.createInsecureRfcommSocketToServiceRecord(MY_UUID);
-//                Method m = device.getClass().getMethod("createInsecureRfcommSocket", new Class[] {int.class});
+//                Method m = device.getClass().getMethod("createRfcommSocket", new Class[] {int.class});
 //                socket = (BluetoothSocket) m.invoke(device, 1);
 //                bluetoothAdapter.cancelDiscovery();
 //                socket.connect();

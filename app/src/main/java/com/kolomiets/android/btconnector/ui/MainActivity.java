@@ -11,7 +11,6 @@ import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.os.Handler;
 import android.os.Message;
-import android.provider.SyncStateContract;
 import android.support.annotation.Nullable;
 import android.support.v4.app.FragmentActivity;
 import android.support.v7.app.ActionBarActivity;
@@ -54,8 +53,8 @@ public class MainActivity extends ActionBarActivity {
                     .add(R.id.container, new PlaceholderFragment())
                     .commit();
         }
-    }
 
+    }
 
     /**
      * A placeholder fragment containing a simple view.
@@ -121,18 +120,26 @@ public class MainActivity extends ActionBarActivity {
                 activity.finish();
             }
 
-            if (!mBtAdapter.isEnabled()) {
-                // if BT is not enabled, request user to do it
-                Intent intent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
-                startActivityForResult(intent, REQUEST_ENABLE_BT);
-            }
-            ensureDiscoverable();
+//            if (!mBtAdapter.isEnabled()) {
+//                // if BT is not enabled, request user to do it
+//                Intent intent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+//                startActivityForResult(intent, REQUEST_ENABLE_BT);
+//            }
+//            ensureBluetoothEnable();
+            //ensureDiscoverable();
 
         }
 
         @Override
         public void onStart() {
             super.onStart();
+
+            if (!mBtAdapter.isEnabled()) {
+                // if BT is not enabled, request user to do it
+                Intent intent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+                startActivityForResult(intent, REQUEST_ENABLE_BT);
+            }
+
             // Register for broadcasts when a device is discovered
             IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
             getActivity().registerReceiver(mReceiver, filter);
@@ -155,28 +162,43 @@ public class MainActivity extends ActionBarActivity {
             }
         }
 
+        @Override
+        public void onActivityCreated(@Nullable Bundle savedInstanceState) {
+            super.onActivityCreated(savedInstanceState);
+            ensureDiscoverable();
+        }
+
+        public void ensureBluetoothEnable() {
+            if (!mBtAdapter.isEnabled()) {
+                // if BT is not enabled, request user to do it
+                Intent intent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+                startActivityForResult(intent, REQUEST_ENABLE_BT);
+            }
+        }
+
         private void doDiscovery() {
             Log.d(TAG, "doDiscovery()");
 
             // Turn on sub-title for new devices
             getView().findViewById(R.id.near_devices_title).setVisibility(View.VISIBLE);
+            if(mBtAdapter != null) {
+                // If we're already discovering, stop it
+                if (mBtAdapter.isDiscovering()) {
+                    mBtAdapter.cancelDiscovery();
+                }
 
-            // If we're already discovering, stop it
-            if (mBtAdapter.isDiscovering()) {
-                mBtAdapter.cancelDiscovery();
-            }
+                // Request discover from BluetoothAdapter
+                mBtAdapter.startDiscovery();
+                getActivity().setProgressBarIndeterminateVisibility(true);
 
-            // Request discover from BluetoothAdapter
-            mBtAdapter.startDiscovery();
-            getActivity().setProgressBarIndeterminateVisibility(true);
-
-            if (mMenu != null) {
-                MenuItem scanMenuItem = mMenu.findItem(R.id.menu_find_devices);
-                if (scanMenuItem != null) {
-                    scanMenuItem.setEnabled(false);
-                    scanMenuItem.setTitle(R.string.searching_for_device);
-                } else {
-                    Log.e(TAG, "scan for device menu item is null");
+                if (mMenu != null) {
+                    MenuItem scanMenuItem = mMenu.findItem(R.id.menu_find_devices);
+                    if (scanMenuItem != null) {
+                        scanMenuItem.setEnabled(false);
+                        scanMenuItem.setTitle(R.string.searching_for_device);
+                    } else {
+                        Log.e(TAG, "scan for device menu item is null");
+                    }
                 }
             }
         }
@@ -266,6 +288,24 @@ public class MainActivity extends ActionBarActivity {
         }
 
         @Override
+        public void onResume() {
+            super.onResume();
+
+            if(mBtAdapter.isEnabled()) {
+                // Performing this check in onResume() covers the case in which BT was
+                // not enabled during onStart(), so we were paused to enable it...
+                // onResume() will be called when ACTION_REQUEST_ENABLE activity returns.
+                if (mBtConnectionService != null) {
+                    // Only if the state is STATE_NONE, do we know that we haven't started already
+                    if (mBtConnectionService.getState() == mBtConnectionService.STATE_NONE) {
+                        // Start the Bluetooth chat services
+                        mBtConnectionService.start();
+                    }
+                }
+            }
+        }
+
+        @Override
         public void onStop() {
             super.onStop();
             if (mReceiver != null) {
@@ -303,8 +343,18 @@ public class MainActivity extends ActionBarActivity {
             switch (requestCode) {
                 case REQUEST_ENABLE_BT:
                     if (resultCode == RESULT_OK || mBtAdapter.isEnabled()) {
-                        // TODO : user enabled BT, do what you need
+                        // Performing this check in onResume() covers the case in which BT was
+                        // not enabled during onStart(), so we were paused to enable it...
+                        // onResume() will be called when ACTION_REQUEST_ENABLE activity returns.
+                        if (mBtConnectionService != null) {
+                            // Only if the state is STATE_NONE, do we know that we haven't started already
+                            if (mBtConnectionService.getState() == mBtConnectionService.STATE_NONE) {
+                                // Start the Bluetooth chat services
+                                mBtConnectionService.start();
+                            }
+                        }
                         Log.d(TAG, "enabled BT");
+
                     } else {
                         // user not confirmed enabling BT, tell him to go fuck himself
                         Log.d(TAG, "user did not enabled BT");
@@ -476,7 +526,7 @@ public class MainActivity extends ActionBarActivity {
                         String readMessage = new String(readBuf, 0, msg.arg1);
                         Toast.makeText(getActivity(), "message received :" +readMessage, Toast.LENGTH_LONG).show();
                         if (getActivity().getPackageManager().hasSystemFeature(PackageManager.FEATURE_TELEPHONY)) {
-//                            sendSMS(readMessage);
+                            sendSMS(readMessage);
                         } else {
                             Toast.makeText(getActivity(), "Your device can not send SMS:" +readMessage, Toast.LENGTH_LONG).show();
                         }
