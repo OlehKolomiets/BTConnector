@@ -12,4 +12,6 @@
     <string name="title_connected_to">Conected to</string>
     <string name="title_connecting">Connecting...</string>
     <string name="title_not_connected">not connected</string>
+    <string name="phone_num_field">Phone number</string>
+    <string name="save_num_button">Save</string>
 </resources>

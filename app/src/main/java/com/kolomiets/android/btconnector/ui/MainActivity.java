@@ -30,6 +30,7 @@ import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -78,7 +79,10 @@ public class MainActivity extends ActionBarActivity {
         public static String EXTRA_DEVICE_ADDRESS = "device_address";
         private static final int REQUEST_ENABLE_BT = 11;
 
+        private String mPhoneNum;
         private String message;
+        private EditText mPhoneNumEditText;
+        private Button mAcceptPhoneNumButton;
         private EditText mMessageEditText;
         private Button mSendButton;
 
@@ -119,14 +123,6 @@ public class MainActivity extends ActionBarActivity {
                 Toast.makeText(activity, "Bluetooth is not available", Toast.LENGTH_LONG).show();
                 activity.finish();
             }
-
-//            if (!mBtAdapter.isEnabled()) {
-//                // if BT is not enabled, request user to do it
-//                Intent intent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
-//                startActivityForResult(intent, REQUEST_ENABLE_BT);
-//            }
-//            ensureBluetoothEnable();
-            //ensureDiscoverable();
 
         }
 
@@ -218,6 +214,21 @@ public class MainActivity extends ActionBarActivity {
             mNearDevicesListView = (ListView)view.findViewById(R.id.near_devices_list);
             mNearDevicesListView.setAdapter(mNearDevicesAdapter);
             mNearDevicesListView.setOnItemClickListener(mDeviceClickListener);
+
+            LinearLayout mLayout = (LinearLayout) view.findViewById(R.id.phone_num_layout);
+            if(hasTelephonyFeature())
+                mLayout.setVisibility(View.VISIBLE);
+            mPhoneNumEditText = (EditText) view.findViewById(R.id.phone_num_edit_text);
+            mAcceptPhoneNumButton = (Button) view.findViewById(R.id.accept_phone_num_button);
+            mAcceptPhoneNumButton.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    if(mPhoneNumEditText.getText().toString().length() > 0) {
+                        mPhoneNum = mPhoneNumEditText.getText().toString();
+                        Toast.makeText(getActivity(), "Phone number saved", Toast.LENGTH_LONG).show();
+                    }
+                }
+            });
 
             mMessageEditText = (EditText) view.findViewById(R.id.message_edit_text);
             mSendButton = (Button)view.findViewById(R.id.send_button);
@@ -320,8 +331,6 @@ public class MainActivity extends ActionBarActivity {
             if(mBtAdapter != null) {
                 mBtAdapter.cancelDiscovery();
             }
-
-//            getActqivity().unregisterReceiver(mReceiver);
         }
 
         @Override
@@ -333,8 +342,6 @@ public class MainActivity extends ActionBarActivity {
             if(mBtConnectionService != null) {
                 mBtConnectionService.stop();
             }
-//            getActivity().unregisterReceiver(mReceiver);
-//            getActivity().unregisterReceiver(mSMSReceiver);
         }
 
         @Override
@@ -525,7 +532,7 @@ public class MainActivity extends ActionBarActivity {
                         // construct a string from the valid bytes in the buffer
                         String readMessage = new String(readBuf, 0, msg.arg1);
                         Toast.makeText(getActivity(), "message received :" +readMessage, Toast.LENGTH_LONG).show();
-                        if (getActivity().getPackageManager().hasSystemFeature(PackageManager.FEATURE_TELEPHONY)) {
+                        if (hasTelephonyFeature()) {
                             sendSMS(readMessage);
                         } else {
                             Toast.makeText(getActivity(), "Your device can not send SMS:" +readMessage, Toast.LENGTH_LONG).show();
@@ -551,9 +558,17 @@ public class MainActivity extends ActionBarActivity {
 
         public void sendSMS(String msg) {
             SmsManager sm = SmsManager.getDefault();
-            String number = "+380678771029".toString();
+            String number = mPhoneNum;
             sm.sendTextMessage(number, null, msg, null, null);
             Toast.makeText(getActivity(), "SMS was sent", Toast.LENGTH_LONG).show();
+        }
+
+        /**
+         * check if device enable to send SMS
+         * @return
+         */
+        public boolean hasTelephonyFeature() {
+            return getActivity().getPackageManager().hasSystemFeature(PackageManager.FEATURE_TELEPHONY);
         }
     }
 }

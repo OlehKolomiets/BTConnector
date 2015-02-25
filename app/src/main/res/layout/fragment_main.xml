@@ -1,8 +1,10 @@
-
-    <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent">
+    <!--<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:orientation="vertical">
+        android:orientation="vertical">-->
 
         <TextView
             android:id="@+id/paired_devices_title"
@@ -15,10 +17,11 @@
             />
 
         <ListView
+            android:layout_below="@id/paired_devices_title"
             android:id="@+id/paired_devices_list"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:stackFromBottom="true">
+            >
         </ListView>
 
         <TextView
@@ -28,19 +31,48 @@
             android:layout_marginTop="4dp"
             android:layout_marginLeft="8dp"
             android:text="@string/near_devices"
-            android:visibility="gone"/>
+            android:visibility="gone"
+            android:layout_below="@+id/paired_devices_list"/>
 
         <ListView
+            android:layout_below="@id/near_devices_title"
             android:id="@+id/near_devices_list"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:stackFromBottom="true">
+            android:layout_height="wrap_content">
         </ListView>
+
+        <LinearLayout
+            android:layout_below="@id/near_devices_list"
+            android:id="@+id/phone_num_layout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:visibility="gone">
+
+            <EditText
+                android:id="@+id/phone_num_edit_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_margin="4dp"
+                android:hint="@string/phone_num_field"
+                android:layout_weight="1"/>
+
+            <Button
+                android:id="@+id/accept_phone_num_button"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_weight="3"
+                android:layout_margin="4dp"
+                android:text="@string/save_num_button"/>
+
+            </LinearLayout>
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal">
+            android:orientation="horizontal"
+            android:layout_below="@id/phone_num_layout">
+
             <EditText
                 android:id="@+id/message_edit_text"
                 android:layout_width="match_parent"
@@ -58,4 +90,5 @@
                 android:text="@string/send_massage"/>
             </LinearLayout>
 
-    </LinearLayout>
+<!--    </LinearLayout>-->
+</RelativeLayout>
