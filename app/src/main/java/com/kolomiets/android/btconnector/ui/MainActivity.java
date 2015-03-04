@@ -2,6 +2,7 @@ package com.kolomiets.android.btconnector.ui;
 
 import android.app.ActionBar;
 import android.app.Activity;
+import android.app.PendingIntent;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.content.BroadcastReceiver;
@@ -54,13 +55,12 @@ public class MainActivity extends ActionBarActivity {
                     .add(R.id.container, new PlaceholderFragment())
                     .commit();
         }
-
     }
 
     /**
      * A placeholder fragment containing a simple view.
      */
-    public static class PlaceholderFragment extends Fragment{ // implements BluetoothMessagesHandler.BluetoothCallback {
+    public static class PlaceholderFragment extends Fragment{
 
         // Message types sent from the BluetoothChatService Handler
         public static final int MESSAGE_STATE_CHANGE = 1;
@@ -73,7 +73,9 @@ public class MainActivity extends ActionBarActivity {
         public static final String DEVICE_NAME = "device_name";
         public static final String TOAST = "toast";
 
-        protected static final String SMS_RECEIVED="android.provider.Telephony.SMS_RECEIVED";
+        private static final String SENT = "SMS_SENT";
+        private static final String DELIVERED = "SMS_DELIVERED";
+        private static final String SMS_RECEIVED="android.provider.Telephony.SMS_RECEIVED";
 
         public static final String TAG = PlaceholderFragment.class.getSimpleName();
         public static String EXTRA_DEVICE_ADDRESS = "device_address";
@@ -95,10 +97,28 @@ public class MainActivity extends ActionBarActivity {
         private String mConnectedDeviceName = null;
         private BtConnectionService mBtConnectionService;
 
+        private Set<BluetoothDevice> mPairedDevices;
+        private ArrayAdapter<String> mPairedDevicesAdapter;
         private ArrayAdapter<String> mNearDevicesAdapter;
         private Menu mMenu;
 
         public PlaceholderFragment() {
+        }
+
+        @Override
+        public void onCreate(Bundle savedInstanceState) {
+            super.onCreate(savedInstanceState);
+            setHasOptionsMenu(true);
+
+            mBtAdapter = BluetoothAdapter.getDefaultAdapter();
+            mBtConnectionService =
+                    new BtConnectionService(getActivity().getApplicationContext(), mHandler);
+
+            if(mBtAdapter == null) {
+                FragmentActivity activity = getActivity();
+                Toast.makeText(activity, "Bluetooth is not available", Toast.LENGTH_LONG).show();
+                activity.finish();
+            }
         }
 
         @Override
@@ -109,33 +129,60 @@ public class MainActivity extends ActionBarActivity {
         }
 
         @Override
-        public void onCreate(Bundle savedInstanceState) {
-            super.onCreate(savedInstanceState);
-            setHasOptionsMenu(true);
+        public void onViewCreated(View view, @Nullable Bundle savedInstanceState) {
+            super.onViewCreated(view, savedInstanceState);
 
-            mBtAdapter = BluetoothAdapter.getDefaultAdapter();
+            mPairedDevicesAdapter = new ArrayAdapter<String>(getActivity(), R.layout.device_list_item);
+            mNearDevicesAdapter = new ArrayAdapter<String>(getActivity(), R.layout.device_list_item);
 
-            mBtConnectionService =
-                    new BtConnectionService(getActivity().getApplicationContext(), mHandler);
+            mPairedDevicesListView = (ListView)view.findViewById(R.id.paired_devices_list);
+            mPairedDevicesListView.setAdapter(mPairedDevicesAdapter);
+            mPairedDevicesListView.setOnItemClickListener(mDeviceClickListener);
 
-            if(mBtAdapter == null) {
-                FragmentActivity activity = getActivity();
-                Toast.makeText(activity, "Bluetooth is not available", Toast.LENGTH_LONG).show();
-                activity.finish();
-            }
+            mNearDevicesListView = (ListView)view.findViewById(R.id.near_devices_list);
+            mNearDevicesListView.setAdapter(mNearDevicesAdapter);
+            mNearDevicesListView.setOnItemClickListener(mDeviceClickListener);
 
+            LinearLayout mLayout = (LinearLayout) view.findViewById(R.id.phone_num_layout);
+            if(hasTelephonyFeature())
+                mLayout.setVisibility(View.VISIBLE);
+            mPhoneNumEditText = (EditText) view.findViewById(R.id.phone_num_edit_text);
+            mAcceptPhoneNumButton = (Button) view.findViewById(R.id.accept_phone_num_button);
+            mAcceptPhoneNumButton.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    if(mPhoneNumEditText.getText().toString().length() > 0) {
+                        mPhoneNum = mPhoneNumEditText.getText().toString();
+                        Toast.makeText(getActivity(), "Phone number saved", Toast.LENGTH_LONG).show();
+                    }
+                }
+            });
+
+            mMessageEditText = (EditText) view.findViewById(R.id.message_edit_text);
+            mSendButton = (Button)view.findViewById(R.id.send_button);
+            mSendButton.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    message = mMessageEditText.getText().toString();
+                    sendMessage(message);
+                }
+            });
+
+            if(mBtAdapter.isEnabled())
+                addPairedDevices();
+        }
+
+        @Override
+        public void onActivityCreated(@Nullable Bundle savedInstanceState) {
+            super.onActivityCreated(savedInstanceState);
+            ensureDiscoverable();
         }
 
         @Override
         public void onStart() {
             super.onStart();
 
-            if (!mBtAdapter.isEnabled()) {
-                // if BT is not enabled, request user to do it
-                Intent intent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
-                startActivityForResult(intent, REQUEST_ENABLE_BT);
-            }
-
+            ensureBluetoothEnable();
             // Register for broadcasts when a device is discovered
             IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
             getActivity().registerReceiver(mReceiver, filter);
@@ -145,8 +192,60 @@ public class MainActivity extends ActionBarActivity {
             getActivity().registerReceiver(mReceiver, filter);
 
             getActivity().registerReceiver(mSMSReceiver, new IntentFilter(SMS_RECEIVED));
+
+            getActivity().registerReceiver(mSMSSentReceiver, new IntentFilter(SENT));
+            getActivity().registerReceiver(mSMSDeliverReceiver, new IntentFilter(DELIVERED));
+
         }
 
+        @Override
+        public void onResume() {
+            super.onResume();
+
+            if(mBtAdapter.isEnabled()) {
+                // Performing this check in onResume() covers the case in which BT was
+                // not enabled during onStart(), so we were paused to enable it...
+                // onResume() will be called when ACTION_REQUEST_ENABLE activity returns.
+                if (mBtConnectionService != null) {
+                    // Only if the state is STATE_NONE, do we know that we haven't started already
+                    if (mBtConnectionService.getState() == mBtConnectionService.STATE_NONE) {
+                        // Start the Bluetooth chat services
+                        mBtConnectionService.start();
+                    }
+                }
+            }
+        }
+
+        @Override
+        public void onStop() {
+            super.onStop();
+            if (mReceiver != null) {
+                getActivity().unregisterReceiver(mReceiver);
+                getActivity().unregisterReceiver(mSMSReceiver);
+
+                getActivity().unregisterReceiver(mSMSSentReceiver);
+                getActivity().unregisterReceiver(mSMSDeliverReceiver);
+            }
+        }
+
+        @Override
+        public void onDestroyView() {
+            super.onDestroyView();
+            if (mBtAdapter != null) {
+                mBtAdapter.cancelDiscovery();
+            }
+            if(mBtConnectionService != null) {
+                mBtConnectionService.stop();
+            }
+        }
+
+        @Override
+        public void onDestroy() {
+            super.onDestroy();
+            if(mBtAdapter != null) {
+                mBtAdapter.cancelDiscovery();
+            }
+        }
 
 
         private void ensureDiscoverable() {
@@ -156,12 +255,6 @@ public class MainActivity extends ActionBarActivity {
                 discoverableIntent.putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 3600);
                 startActivity(discoverableIntent);
             }
-        }
-
-        @Override
-        public void onActivityCreated(@Nullable Bundle savedInstanceState) {
-            super.onActivityCreated(savedInstanceState);
-            ensureDiscoverable();
         }
 
         public void ensureBluetoothEnable() {
@@ -199,50 +292,9 @@ public class MainActivity extends ActionBarActivity {
             }
         }
 
-        @Override
-        public void onViewCreated(View view, @Nullable Bundle savedInstanceState) {
-            super.onViewCreated(view, savedInstanceState);
-
-            ArrayAdapter<String> mPairedDevicesAdapter =
-                    new ArrayAdapter<String>(getActivity(), R.layout.device_list_item);
-            mNearDevicesAdapter = new ArrayAdapter<String>(getActivity(), R.layout.device_list_item);
-
-            mPairedDevicesListView = (ListView)view.findViewById(R.id.paired_devices_list);
-            mPairedDevicesListView.setAdapter(mPairedDevicesAdapter);
-            mPairedDevicesListView.setOnItemClickListener(mDeviceClickListener);
-
-            mNearDevicesListView = (ListView)view.findViewById(R.id.near_devices_list);
-            mNearDevicesListView.setAdapter(mNearDevicesAdapter);
-            mNearDevicesListView.setOnItemClickListener(mDeviceClickListener);
-
-            LinearLayout mLayout = (LinearLayout) view.findViewById(R.id.phone_num_layout);
-            if(hasTelephonyFeature())
-                mLayout.setVisibility(View.VISIBLE);
-            mPhoneNumEditText = (EditText) view.findViewById(R.id.phone_num_edit_text);
-            mAcceptPhoneNumButton = (Button) view.findViewById(R.id.accept_phone_num_button);
-            mAcceptPhoneNumButton.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    if(mPhoneNumEditText.getText().toString().length() > 0) {
-                        mPhoneNum = mPhoneNumEditText.getText().toString();
-                        Toast.makeText(getActivity(), "Phone number saved", Toast.LENGTH_LONG).show();
-                    }
-                }
-            });
-
-            mMessageEditText = (EditText) view.findViewById(R.id.message_edit_text);
-            mSendButton = (Button)view.findViewById(R.id.send_button);
-            mSendButton.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    message = mMessageEditText.getText().toString();
-                    sendMessage(message);
-                }
-            });
-
-            Set<BluetoothDevice> mPairedDevices = mBtAdapter.getBondedDevices();
-
-//            ensureDiscoverable();
+        private void addPairedDevices() {
+            View view = getView();
+            mPairedDevices = mBtAdapter.getBondedDevices();
 
             if(mPairedDevices.size() > 0) {
                 view.findViewById(R.id.paired_devices_title).setVisibility(View.VISIBLE);
@@ -252,8 +304,8 @@ public class MainActivity extends ActionBarActivity {
             } else {
                 mPairedDevicesAdapter.add("No paired devices");
             }
-        }
 
+        }
 
         private void sendMessage(String message) {
 
@@ -299,52 +351,6 @@ public class MainActivity extends ActionBarActivity {
         }
 
         @Override
-        public void onResume() {
-            super.onResume();
-
-            if(mBtAdapter.isEnabled()) {
-                // Performing this check in onResume() covers the case in which BT was
-                // not enabled during onStart(), so we were paused to enable it...
-                // onResume() will be called when ACTION_REQUEST_ENABLE activity returns.
-                if (mBtConnectionService != null) {
-                    // Only if the state is STATE_NONE, do we know that we haven't started already
-                    if (mBtConnectionService.getState() == mBtConnectionService.STATE_NONE) {
-                        // Start the Bluetooth chat services
-                        mBtConnectionService.start();
-                    }
-                }
-            }
-        }
-
-        @Override
-        public void onStop() {
-            super.onStop();
-            if (mReceiver != null) {
-                getActivity().unregisterReceiver(mReceiver);
-                getActivity().unregisterReceiver(mSMSReceiver);
-            }
-        }
-
-        @Override
-        public void onDestroy() {
-            super.onDestroy();
-            if(mBtAdapter != null) {
-                mBtAdapter.cancelDiscovery();
-            }
-        }
-
-        @Override
-        public void onDestroyView() {
-            super.onDestroyView();
-            if (mBtAdapter != null) {
-                mBtAdapter.cancelDiscovery();
-            }
-            if(mBtConnectionService != null) {
-                mBtConnectionService.stop();
-            }
-        }
-
-        @Override
         public void onActivityResult(int requestCode, int resultCode, Intent data) {
             super.onActivityResult(requestCode, resultCode, data);
             switch (requestCode) {
@@ -360,6 +366,8 @@ public class MainActivity extends ActionBarActivity {
                                 mBtConnectionService.start();
                             }
                         }
+                        addPairedDevices();
+
                         Log.d(TAG, "enabled BT");
 
                     } else {
@@ -431,6 +439,53 @@ public class MainActivity extends ActionBarActivity {
             }
         };
 
+        private BroadcastReceiver mSMSDeliverReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent arg1) {
+                switch (getResultCode()) {
+                    case Activity.RESULT_OK:
+                        Toast.makeText(getActivity(), "sms delivered",
+                                Toast.LENGTH_SHORT).show();
+                        break;
+                    case Activity.RESULT_CANCELED:
+                        Toast.makeText(getActivity(), "sms not delivered",
+                                Toast.LENGTH_SHORT).show();
+                        break;
+                }
+
+            }
+        };
+
+        private BroadcastReceiver mSMSSentReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                switch (getResultCode()) {
+                    case Activity.RESULT_OK:
+                        Toast.makeText(getActivity(), "sms sent", Toast.LENGTH_SHORT)
+                                .show();
+//                        startActivity(new Intent(SendSMS.this, ChooseOption.class));
+//                        overridePendingTransition(R.anim.animation, R.anim.animation2);
+                        break;
+                    case SmsManager.RESULT_ERROR_GENERIC_FAILURE:
+                        Toast.makeText(getActivity(), "Generic failure",
+                                Toast.LENGTH_SHORT).show();
+                        break;
+                    case SmsManager.RESULT_ERROR_NO_SERVICE:
+                        Toast.makeText(getActivity(), "No service",
+                                Toast.LENGTH_SHORT).show();
+                        break;
+                    case SmsManager.RESULT_ERROR_NULL_PDU:
+                        Toast.makeText(getActivity(), "Null PDU", Toast.LENGTH_SHORT)
+                                .show();
+                        break;
+                    case SmsManager.RESULT_ERROR_RADIO_OFF:
+                        Toast.makeText(getActivity(), "Radio off",
+                                Toast.LENGTH_SHORT).show();
+                        break;
+                }
+            }
+        };
+
         private BroadcastReceiver mSMSReceiver = new BroadcastReceiver() {
 
             final SmsManager sms = SmsManager.getDefault();
@@ -451,13 +506,15 @@ public class MainActivity extends ActionBarActivity {
 
                             String senderNum = phoneNumber;
                             String message = currentMessage.getDisplayMessageBody();
+                            Log.i("SmsReceiver", senderNum);
+                            if(senderNum == phoneNumber) {
+                                Log.i("SmsReceiver", "senderNum: "+ senderNum + "; message: " + message);
 
-                            Log.i("SmsReceiver", "senderNum: "+ senderNum + "; message: " + message);
+                                Toast.makeText(context, "senderNum: "+ senderNum + ", message: " +
+                                        message, Toast.LENGTH_LONG).show();
 
-                            Toast.makeText(context, "senderNum: "+ senderNum + ", message: " +
-                                    message, Toast.LENGTH_LONG).show();
-
-                            sendMessage(message);
+                                sendMessage(message);
+                            }
                         }
                     }
 
@@ -557,10 +614,17 @@ public class MainActivity extends ActionBarActivity {
         };
 
         public void sendSMS(String msg) {
-            SmsManager sm = SmsManager.getDefault();
-            String number = mPhoneNum;
-            sm.sendTextMessage(number, null, msg, null, null);
-            Toast.makeText(getActivity(), "SMS was sent", Toast.LENGTH_LONG).show();
+            if((mPhoneNum != null)&&(msg != null)) {
+                PendingIntent sentPI = PendingIntent.getBroadcast(getActivity(), 0, new Intent(
+                        SENT), 0);
+                PendingIntent deliveredPI = PendingIntent.getBroadcast(getActivity(), 0,
+                        new Intent(DELIVERED), 0);
+                SmsManager sm = SmsManager.getDefault();
+                sm.sendTextMessage(mPhoneNum, null, msg, sentPI, deliveredPI);
+//                Toast.makeText(getActivity(), "SMS was sent", Toast.LENGTH_LONG).show();
+            } else {
+                Toast.makeText(getActivity(), "Please enter phone number", Toast.LENGTH_LONG).show();
+            }
         }
 
         /**
